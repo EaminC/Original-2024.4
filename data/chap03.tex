@@ -1,0 +1,505 @@
+% !TeX root = ../thuthesis-example.tex
+
+
+\chapter{基于大语言模型智能体的混合推荐系统设计}
+\section{概述}
+近年来，大语言模型\cite{wang2022pre}技术飞速崛起，解决了一系列自然语言处理领域的公开问题。在本工作中主要采用GPT3.5-turbo\cite{brown2020language}作为预训练大语言模型提供语义理解的接口。大语言模型依靠强大的预训练知识库以及出色的语义理解能力为推荐系统在语义特征提取、流程理解以及情感分析等功能上提供出色的功能接口，是本工作中混合推荐系统的核心设计框架的基础。
+
+本工作中采用大语言模型的必要性及设计优势的论述可以概括如下：\\
+\textbf{兴趣理解} \ 在推荐系统中，有很多交互信息并非以量化交互得分存储在交互矩阵中的，这些信息包括但不限于用户个人的档案信息、物品的档案信息及用户文本评价、用户历史交互信息的文本数据等。这些数据的形态各异，同时也没有传统自然语言处理技术的统一处理方法，此时大语言模型提供了一个稳定且统一的处理接口。在本工作中，基于大语言模型的代理人\cite{wang2024survey} 用于基于用户基础信息档案分析并基于智能体的记忆绘制用户画像并更新。用户的动态交互记录也可以参与记忆更新。\\
+\textbf{少样本交互预测} \ 虽然大语言模型的训练需要依靠大量的语料，但是在使用预训练大模型时，依靠已经存在在预训练模型中的知识信息，能够在新的问题上仅仅提供少量或者零样本就足以进行泛化学习。具体在推荐系统框架中对于用户已有的交互系统，需要判断用户的短期兴趣是否产生了强烈的变化就可以给予推荐系统少量的学习样本从而让预训练模型给出泛化结果。\\
+\textbf{增强兴趣特征生成} \ 在推荐系统中，直接使用大语言模型进行推荐往往是效率比较低的方式。一方面预训练模型中并没有当前推荐系统中特定的用户及物品还有交互记录的语料用于训练。另一方面大语言模型的运算开销比普通模型更大，因此在即时的推荐系统中对于实时性要求较高的情形下，直接使用大语言模型无法得到准确的推荐结果同时时效性表现会更差。在此基础上，Li等人在GPT4Rec\cite{li2023gpt4rec}中提到一种利用大语言模型进行粗召回的方法，即利用大语言模型对用户交互历史进行语义分析，让大语言模型进行推理，得到其下次可能使用的检索词。此时再使用新的推理词使用检索系统检索，得到粗召回结果，可以大程度减少预训练模型运算开销，也可以在粗召回结果上继续精细排序提高排序质量。\\
+\section{方法}
+\subsection{物品推荐概述}
+
+本节主要基于物品推荐进行智能体框架设计。城市生活中物品的推荐涵盖了日常生活的方方面面，包括衣食住行。在本节框架设计中尽可能的包含了真实物品所可能包含的全部字段。不仅包含了常见在线推荐系统中的交互特征及主体信息，更重要的包含了城市空间真实信息，例如地理位置、地图信息以及城市综合数据库。在完整框架的基础上，一些常见的线上推荐系统的智能体记忆更新框架可以视为物品推荐场景的子集，即去除真实地理信息的物品推荐系统。因此推荐的主体可以是常见的线上可交互物品，也可以是真实地理空间中涵盖城市信息的物品。
+\begin{figure}
+    \centering
+    \includegraphics[width=0.4\linewidth]{figures/POI_Rec.png}
+    \caption{物品推荐示意图}
+    \label{fig:enter-label}
+\end{figure}
+
+
+
+
+
+
+
+\subsection{智能体记忆模块存储及更新}
+\subsubsection{动静态混合记忆模块}
+外部记忆模块是智能体的核心。对于单个用户而言需要用用户的个人档案以及交互历史进行初始化，作为静态记忆。而随着推荐过程的进行，会有实时内容更新形成动态记忆，同时需要与之配套的更新机制。因此一个全面的键值以及更新方式是记忆模块设计的核心。实际应用场景中可能会有缺失值，则相应方法则需要对所缺失的数据字段进行针对性处理，或直接对智能体记忆模块更新机制进行通用性处理。与传统推荐系统中以交互矩阵以及用户对物品的评分不同，首先该记忆模块对单个用户存储了更多的用户基础信息以及过往交互信息，能够保留单个用户单次交互行为的更多特征，从而允许推荐系统在推荐过程里挖掘更多信息从而给出更加精准的推荐结果。此外由于该记忆更多的是以显式文本的形式进行存储的，因此在大语言模型诞生以前对显式文本直接进行语义判断是有困难的，而依靠大语言模型技术能够在语义层面对用户档案进行更加详细的理解推断，同时对于开发者而言，最终呈现的大语言模型的可解释性也将显著增强。
+
+以下将从智能体记忆模块数据结构以及常用操作进行详细介绍：
+
+\textbf{a) 数据结构} \ 
+
+智能体的记忆数据主要可以分为两大部分，即静态信息和动态信息。静态信息不会在推荐过程中发生变化，但会随着推荐系统更新进行维护。与之相对的动态信息则与用户当前交互时空状态相关。动态信息与静态信息都用于形成智能体对于当前用户的喜好偏好的描绘，且承担着不同的角色。静态信息中描绘的主要是用户长期交互以及基础篇好共同形成的偏向静态且长期稳定的用户喜好特征，在推荐系统需要做出长期兴趣推断及预测推断时以及被动式推荐的过程里能够提供充足的用户特征信息。而真实的推荐系统中用户常常会做出与长期推荐系统并不统一的交互请求，在实际系统中这类信息常常包含特殊时间，比如特殊节日、特殊地点，如用户在非常规地点的差率以及偏好短期剧烈变化，例如用突然产生探索性推荐的请求等。在这些情况下需要短期推荐的介入，此时动态信息可以对推荐结果进行必要的修正。\\
+\textbf{静态信息} \ 用户的静态信息在数据库中显式存储。主要包含两部分：用户档案信息（Identification Info）以及交互信息（Interaction Info）。用户档案信息包含姓名、年龄、性别等用户基础信息，而同时也包含了用户工作工作、工资、存款等与社会生活直接相关的信息，这些信息可以辅助进行用户画像的描绘。交互信息则与传统的交互矩阵不同，存储了用户交互偏好字段外还显式地存储了用户交互记录，包括交互的时空信息以及数据库中存储的物品评价信息等。具体的数据结构以Json\cite{rfc4627}格式记录在算法3.1中。\\
+\textbf{动态信息} \ 动态信息产生与用户交互时，与普通推荐系统最大的区别是，依靠于大语言模型的语义理解能力，能够接受用户主动搜索的Query字段，此外还包含发送推荐请求时的时空信息以及附加搜索条件。具体的数据结构以Json\cite{rfc4627}格式记录在算法3.2中。\\ 
+\begin{algorithm}
+\caption{用户静态信息表示}
+\begin{algorithmic}[1]
+\STATE \texttt{\{} "Identification Info": \texttt{\{}
+\STATE \hspace{2em} "Name": \textbf{用户的姓名},
+\STATE \hspace{2em} "UserID": \textbf{用户的唯一标识符},
+\STATE \hspace{2em} "Age": \textbf{用户的年龄},
+\STATE \hspace{2em} "Gender": \textbf{用户的性别},
+\STATE \hspace{2em} "Salary": \textbf{用户的工资},
+\STATE \hspace{2em} "Federation": \textbf{用户所属的组织或团体},
+\STATE \hspace{2em} "Work age": \textbf{用户的工作年限},
+\STATE \hspace{2em} "Deposit": \textbf{用户的存款},
+\STATE \hspace{2em} "Company": \textbf{用户的公司},
+\STATE \hspace{2em} "Home Address": \textbf{用户的家庭住址}
+\STATE \texttt{\},}
+\STATE "Interaction Info": \texttt{\{}
+\STATE \hspace{2em} "Description of Favor": \textbf{用户的偏好描述},
+\STATE \hspace{2em} "Interaction History": \texttt{\{}
+\STATE \hspace{4em} "Inter1": \texttt{\{}
+\STATE \hspace{6em} "Time": \textbf{交互发生的时间},
+\STATE \hspace{6em} "Query": \textbf{用户的查询},
+\STATE \hspace{6em} "Filter": \textbf{应用的过滤条件},
+\STATE \hspace{6em} "Final decision": \texttt{\{}
+\STATE \hspace{8em} "Item name": \textbf{物品的名称},
+\STATE \hspace{8em} "Item category": \textbf{物品的类别},
+\STATE \hspace{8em} "Item comment grade": \textbf{物品的评论评分},
+\STATE \hspace{8em} "Item price average": \textbf{物品的平均价格},
+\STATE \hspace{8em} "Item comment count": \textbf{物品的评论数量},
+\STATE \hspace{8em} "Item distance": \textbf{兴趣点的距离}
+\STATE \hspace{6em} \texttt{\}}
+\STATE \hspace{4em} \texttt{\}}
+\STATE \hspace{2em} \texttt{\}}
+\STATE \texttt{\}}
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{用户动态信息表示}
+\begin{algorithmic}[1]
+\STATE \texttt{\{} "Query": \textbf{发送给推荐系统的用户查询信息},
+\STATE \hspace{2em} "Filter": \texttt{\{}
+\STATE \hspace{4em} "filter type": \textbf{过滤类型（距离，评论数，价格，评论等级，分类）},
+\STATE \hspace{4em} "rank type": \textbf{排序类型（1：上升，0：下降，none：无）}
+\STATE \hspace{2em} \texttt{\}},
+\STATE \hspace{2em} "Location": \textbf{查询时用户的位置},
+\STATE \hspace{2em} "Time": \textbf{查询发送时间}
+\STATE \texttt{\}}
+\end{algorithmic}
+\end{algorithm}
+\newpage
+\textbf{b) 数据操作} \ 
+
+基于上一节所提到的智能体记忆模块的数据结构，本节将提出基于所设计的数据机构所设计的一系列数据操作以及智能体记忆模块更新机制。操作由一系列智能体代理完成，每一个代理都完成特定操作，最终组合并彼此配合完成推荐。主要的记忆模块智能体代理组及各自操作包含如下：\\
+\textbf{静态记忆初始化(Passive intent recognition,Pir Agent)} \ 在初始化智能体记忆模块时，主要读取记忆模块中的静态数据。Pir Agent主要读取用户基础信息以及过往交互记录，形成对当前用户偏好的被动式意图识别，并更新在"Interaction Info.Description Favour"字段中。\\
+\textbf{动态记忆更新(Active intent recognition,Air Agent)} 在收到用户主动的返回推荐结果请求时，Air Agent首先在用户的检索词中获取用户主要意图，并识别用户请求中的时空信息分解并推断其中的混合意图，并更新到智能体记忆中。\\
+\textbf{混合记忆交叉更新(Supplement and widen，Sew Agent)} \ 在一轮推荐中，Pir Agent和 Air Agent除了各自读取更新外还涉及到交叉更新的过程(PAir),在这个过程里，新的动态交互会写入静态信息中的交互记录以及用户静态交互偏好中，同时静态信息中提取的语义特征也可以作为动态信息缺失时的默认值。\\
+\textbf{推荐物品召回(Gathering 、Linkage out-of
+Versatile Explorer,Glove Agent)} \ 智能体记忆完成更新后，可以依靠记忆中的数据获取智能体暂时的人格信息，并仿照人类交互从推荐系统中获取返回结果，具体召回过程会在后续章节详细展开。 \\
+\textbf{记忆反思(Reasoning in General and
+Specific,Rings Agent)} \ 为进一步相比传统推荐系统提升推荐结果的可解释性以及提高推荐质量，对于每一个推荐结果进行理解，并推测推荐结果是否合乎用户喜好，并依据反思结果提高或降低排序，从而提升排序质量。\\
+\textbf{探索性推荐(PLAN-B Agent)} \ 在一些特定情境下，用户可能不会喜欢一尘不变的推荐，例如特殊时间，比如特殊节日、特殊地点，如用户在非常规地点等，有时用户可能有特殊交互请求变化或者特殊情况，或者只是单纯的长期兴趣波动较小，此时就可以采用探索性推荐。探索性推荐还可以用于应对推荐系统常见的长尾性问题，在内容生产平台中为生产优质内容但没有得到足够曝光度的物品提供特殊推荐。\\
+\textbf{反馈接收(Shake Agent)} \ 传统推荐系统在返回推荐结果后很难大幅度地为每一个用户进一步调整推荐结果，在本工作框架之中可以接收用户反馈调整的需求并进行理解，从而对推荐结果进行优化修正。\\
+
+\begin{figure}[h!]
+    \centering
+    \hspace*{-0in} % 调整图像位置以紧贴页面左边缘
+    \includegraphics[width=0.85\linewidth]{figures/agent8.pdf} % 调整scale参数以适应页面
+    \caption{基于大语言模型智能体的完整的POI推荐系统推荐流程示意图}
+    \label{fig:enter-label}
+\end{figure}
+\newpage
+\subsubsection{基于大语言模型智能体的POI推荐流程}
+本节在介绍了各个推荐系统组成智能体的各自功能后，将介绍一个大致的推荐框架。后续的优化工作将主要基于其中的部分组件进行优化。正如各个智能体名字简称所揭示的一样，推荐系统就是一个缝制手套、带上戒指并与用户握手的过程。完整的推荐系统主要包含：智能体记忆初始化阶段，主要包含PAIR Agent以及Sew Agent、推荐召回环节，主要包含Glove Agent、Rings Agent及Plan-B Agent、后反馈环节，主要包含Shake Agent。\\ 
+\textbf{记忆初始化} \ 在推荐的初始化阶段，Pir Agent以及Air Agent分别进行初始化，并分别将用户的动态推荐请求及静态档案进行初始化，随后将档案输入Sew Agent进行交叉更新。更新后维护静态记忆，并将强化后的动态请求输入后续推荐流程。\\
+\textbf{推荐召回} \ 在对用户信息进行充分的语义理解后，就可以从推荐系统中获取召回结果，召回也分为常规召回及探索性召回，分别对应用户普通的长短期兴趣探索以及特殊情形下的探索性推荐。\\
+\textbf{后反馈} \ 获取推荐结果后会与用户进行一次交互，用户若接受推荐结果，则结束推荐流程，并对记忆体进行更新，若不接受，则会着重调用反思模块调整推荐结果，直至返回用户满意的推荐结果。
+\newpage
+\subsection{长短期兴趣变化识别及自适应推荐}
+\subsubsection{基于线性神经⽹络的⻓短期推荐系统}
+基于前一章节的描述，在关注大量用户过往记录时往往会采用基于模型的用户交互推荐系统算法，这一算法最重要的前提是用户在长期交互过程中有稳定且容易提取的特征。但是事实情况是，这种传统的基于矩阵的算法并未考虑交互记录的时效性。具体而言用户可能在近期产生了重大的兴趣偏移，但是由于时间上长期以前的交互记录与近期交互记录的权重相同，因此长期交互记录也产生了相同的影响，导致对近期的关注度没有显著。因此需要基于时间进行权重调整，调整注意力范围，在一定时间范围内识别成高注意力范围，对这些交互记录采取更多的权重。而对更早时间的交互记录采用低注意力以作为区分。本节将着重介绍线性权重层的引入和结构以及对算法的影响。
+
+考虑基于奇异值分解的基于用户交互推荐系统，为了关注近期的交互行为，为了关注近期的交互行为，引入多个权重调制层。每个权重矩阵 \( W^n \) 的每个元素 \( W_{ij}^n \) 由以下公式定义：
+
+\begin{equation}
+W_{ij}^n = \left( \frac{j_n}{i} \right)^{-1}
+\end{equation}
+
+更一般地，每个权重调制函数可以抽象为一个激活函数形式：
+
+\begin{equation}
+W_{ij}^n = \frac{1}{1 + e^{-\alpha_n (j_n/i - \beta_n)}}
+\end{equation}
+
+其中，\( \alpha_n \) 和 \( \beta_n \) 是第 \( n \) 个调制函数的可调参数，控制函数的形状和中心位置。这里，\( j_n \) 表示第 \( n \) 个高注意力时间，即用户在第 \( n \) 个时间尺度上的近期交互时间，\( i \) 表示用户有交互记录的总时间，计算梯度并更新参数，\( \eta \) 是学习率：
+
+\begin{equation}
+U_k' = U_k - \eta \left( \frac{\partial \mathcal{L}}{\partial U_k} \right)=U_k - \eta \left( -2 \sum_{(u, i) \in \mathcal{K}} (R_{ui} - \sum_{n=1}^N W_{ui}^n \cdot (U_k \Sigma_k V_k^T)_{ui}) \sum_{n=1}^N W_{ui}^n V_k \Sigma_k + 2 \lambda U_k \right)
+\end{equation}
+
+\begin{equation}
+V_k' = V_k - \eta \left( \frac{\partial \mathcal{L}}{\partial V_k} \right)=V_k - \eta \left( -2 \sum_{(u, i) \in \mathcal{K}} (R_{ui} - \sum_{n=1}^N W_{ui}^n \cdot (U_k \Sigma_k V_k^T)_{ui}) \sum_{n=1}^N W_{ui}^n \Sigma_k^T U_k^T + 2 \lambda V_k \right)
+\end{equation}
+
+为简洁及利用cuda的并行计算优势，上述运算可以转换为张量运算，具体而言：
+预测评分矩阵及梯度更新变为张量形式，\(\circ\) 表示逐元素乘法：
+
+\begin{equation}
+\hat{\mathcal{R}} = \sum_{n=1}^N \mathcal{W}_n \circ (\mathcal{U} \Sigma \mathcal{V}^T)
+\end{equation}
+
+
+梯度更新规则为：
+\(\mathcal{U} \leftarrow \mathcal{U} - \eta \frac{\partial \mathcal{L}}{\partial \mathcal{U}}\) 和 \(\mathcal{V} \leftarrow \mathcal{V} - \eta \frac{\partial \mathcal{L}}{\partial \mathcal{V}}\)。具体形式为：
+
+
+\begin{equation}
+\frac{\partial \mathcal{L}}{\partial \mathcal{U}} = -2 \left( \mathcal{R} - \sum_{n=1}^N \mathcal{W}_n \circ (\mathcal{U} \Sigma \mathcal{V}^T) \right) \sum_{n=1}^N \mathcal{W}_n \circ (\mathcal{V} \Sigma) + 2 \lambda \mathcal{U}
+\end{equation}
+
+\begin{equation}
+\frac{\partial \mathcal{L}}{\partial \mathcal{V}} = -2 \left( \mathcal{R} - \sum_{n=1}^N \mathcal{W}_n \circ (\mathcal{U} \Sigma \mathcal{V}^T) \right)^T \sum_{n=1}^N \mathcal{W}_n \circ (\Sigma \mathcal{U}^T) + 2 \lambda \mathcal{V}
+\end{equation}
+
+
+基于并行运算优化的加入权重层的推荐系统算法流程基于如下伪代码描述：\\
+
+\begin{algorithm}
+\caption{基于权重层控制注意力范围的推荐系统（GPU）}
+\begin{algorithmic}[1]
+\REQUIRE 用户集合 \( U \)，项目集合 \( I \)，评分矩阵 \( R \)，奇异值个数 \( k \)，学习率 \( \eta \)，正则化参数 \( \lambda \)，迭代次数 \( \text{num\_epochs} \)，注意力范围集合 \( \{K_n\} \)
+\ENSURE 不同注意力范围 \( K_n \) 的模型集合 \( \{\hat{\mathcal{R}}^n\} \)
+\FOR{每个 \( K_n \) 在 \( \{K_n\} \) 中}
+    \STATE 将 \( \mathcal{U}^n \in \mathbb{R}^{m \times k} \) 和 \( \mathcal{V}^n \in \mathbb{R}^{n \times k} \) 随机初始化并传输到 GPU
+    \FOR{epoch = 1 到 \text{num\_epochs}}
+        \STATE 计算预测评分矩阵 \( \hat{\mathcal{R}}^n = \sum_{i=1}^N \mathcal{W}_i^n \circ (\mathcal{U}^n \Sigma \mathcal{V}^{nT}) \) 
+        \STATE 计算梯度 \( \frac{\partial \mathcal{L}^n}{\partial \mathcal{U}^n} \) 和 \( \frac{\partial \mathcal{L}^n}{\partial \mathcal{V}^n} \) 
+        \STATE 更新 \( \mathcal{U}^n \leftarrow \mathcal{U}^n - \eta \frac{\partial \mathcal{L}^n}{\partial \mathcal{U}^n} \)
+        \STATE 更新 \( \mathcal{V}^n \leftarrow \mathcal{V}^n - \eta \frac{\partial \mathcal{L}^n}{\partial \mathcal{V}^n} \)
+    \ENDFOR
+    \STATE 将模型 \( \hat{\mathcal{R}}^n \) 从 GPU 保存到 CPU
+\ENDFOR
+\RETURN 模型集合 \( \{\hat{\mathcal{R}}^n\} \)
+\end{algorithmic}
+\end{algorithm}
+
+\newpage
+训练得到子模型组的过程可以用下图简单表述
+
+\begin{figure}[h!]
+    \noindent
+    \hspace*{-0in} % 调整图像位置以紧贴页面左边缘
+     \includegraphics[scale=0.6]{figures/MF.pdf} % 调整scale参数以适应页面
+    \caption{权重长短期推荐网络示意图}
+    \label{fig:enter-label}
+\end{figure}
+\subsubsection{基于⼤语⾔模型的⽤户偏好变化识别}
+在得到一系列不同注意力范围的子模型后，调度何种模型的关键在于对于用户偏好变化识别。在这里主要提供两种思路，分别是定性识别兴趣变化以及定量识别兴趣变化。
+
+对于定性挖掘用户偏好变化，利用大语言模型的语义分析能力并不能准确得到高注意力范围的准确比例，只能利用少量样本提示大语言模型并大致定性分析用户的长短期变化是否发生了较大的变化。在这种情形下，每个用户的短期模型参数是统一的，大语言模型仅仅从一个长期模型以及一个短期模型中选择更适合当前推荐情形的模型进行调度。具体而言，若用户长期兴趣与短期兴趣之间差异过大，则优先调用短期模型。若长期以来偏好保持不变，则以一定概率调度探索性推荐模型\cite{robbins1952some}，大概率维持长期推荐模型。
+
+对于定量挖掘用户偏好，则需要定量利用大语言模型推测用户大致发生兴趣偏移的时间节点计算高注意力比例，并调用刚好超过对应参数的子模型用于进行推荐。定量挖掘偏好依赖于大语言模型准确的兴趣变化识别能力以及少样本学习能力，实际性能在本工作实验环境中并不如定性挖掘。
+
+\subsubsection{基于⼤语⾔模型的⾃适应⻓短期推荐系统}
+基于算法3.3以及上节中定量判断用户兴趣偏好变化的方法，本工作提出一种基于大语言模型的自适应长短期推荐系统的算法实现如下：
+\begin{algorithm}
+\caption{用户兴趣变化检测与模型调度}
+\begin{algorithmic}[1]
+\REQUIRE 用户档案集合 \( \{P_u\} \)，模型集合 \( \{\hat{\mathcal{R}}^n\} \)
+\ENSURE 最优模型调度 \( \{\hat{\mathcal{R}}^*_u\} \)
+\FOR{每个用户档案 \( P_u \) 在 \( \{P_u\} \) 中}
+    \STATE Sew Agent 分析 \( u \) 的兴趣变化情况并计算用户兴趣变化量 \( \Delta I_u \)
+    \IF{\( \Delta I_u \) 大于预设阈值}
+        \STATE 选择最适合的模型 \( \hat{\mathcal{R}}^*_u = \arg \max_{n} \text{适应度}(K_n, \Delta I_u) \)
+    \ELSE
+        \STATE 保持当前模型 \( \hat{\mathcal{R}}^*_u \)
+    \ENDIF
+    \STATE 保存最优模型 \( \hat{\mathcal{R}}^*_u \)
+\ENDFOR
+\RETURN 最优模型调度 \( \{\hat{\mathcal{R}}^*_u\} \)
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{基于语义理解的内容推荐}
+
+\subsubsection{基于向量化及基于相似度召回⽅法}
+
+在第二章章节中，已经介绍了基于内容的推荐方法。本工作选择了三种常见的自然语言向量化模型或代码库：TF-IDF、BERT 和 SpaCy。首先，通过后续基于大语言模型的框架生成一系列检索词，并对这些检索词进行向量化表示。这些向量表示将用于计算用户与物品之间的相似度，生成推荐列表。结合大模型的优点在于，它能提供更强大的语义理解和生成能力，捕捉用户偏好的细微变化，从而实现更高层次的语义分析和用户偏好建模，提供更加精准和个性化的推荐服务。以下是本工作中对于自然语言检索词进行向量化的大致框架：
+\newpage
+\begin{algorithm}
+\caption{向量化与相似度召回}
+\begin{algorithmic}[1]
+\REQUIRE 用户集合 \( \{u\} \)，项目集合 \( \{i\} \)，推荐数量 \( N \)，选择的向量化模型（TF-IDF, BERT, SpaCy）
+\ENSURE 推荐项目列表
+\FOR{每个项目 \( i \)}
+    \IF{选择 TF-IDF}
+        \STATE 计算 \( \text{TF-IDF}(i, u, \mathcal{U}) \)
+        \STATE \( \bm{v}_i = \left[ \text{TF-IDF}(i, u_1, \mathcal{U}), \ldots, \text{TF-IDF}(i, u_m, \mathcal{U}) \right] \)
+    \ELSIF{选择 BERT}
+        \STATE 预处理档案信息 \( \text{Doc}_i \)
+        \STATE \( \bm{v}_i = \text{BERT}(\text{Doc}_i) \)
+    \ELSIF{选择 SpaCy}
+        \STATE 预处理档案信息
+        \STATE 标注词性，进行依存句法分析和命名实体识别
+        \STATE \( \bm{v}_i = \text{词嵌入}(\text{Doc}_i) \)
+    \ENDIF
+\ENDFOR
+\FOR{每个用户 \( u \)}
+    \STATE 初始化用户偏好向量 \( \bm{p}_u \)
+    \STATE \( \bm{p}_u = \frac{1}{|\mathcal{I}_u|} \sum_{i \in \mathcal{I}_u} \bm{v}_i \)
+    \FOR{每个候选项目 \( i \)}
+        \STATE 计算相似度 \( \text{sim}(u, i) = \bm{p}_u \cdot \bm{v}_i \)
+    \ENDFOR
+    \STATE 按相似度从高到低排序候选项目
+    \STATE 返回前 \( N \) 个项目作为推荐结果
+\ENDFOR
+\RETURN 推荐项目列表
+\end{algorithmic}
+\end{algorithm}
+
+\subsubsection{基于正则匹配及阈值过滤对召回的修正}
+在实际向量化并检索的过程里，本工作关注到了一些特例并予以修正\cite{phantom_menace, guardians_galaxy, force_awakens, mandalorian}。一般而言对于相似度召回有三种方式，即基于字符串正则匹配直接召回、基于特征向量相似度召回以及基于交互记录协同过滤召回。基于交互记录协同过滤的召回方式以及其基于大语言模型的优化方法已经在上节介绍，本节主要介绍基于正则匹配及阈值过滤对内容向量相似度召回的修正。例如在现有的检索系统中，使用“Star War”\cite{phantom_menace}进行检索，会将“Star”及“War”分词化后平均，再在数据库中检索与该向量最接近的物品进行召回。而实际上，星球大战的后续作品，例如《Star Wars:The Force Awakens》由于标题中含有较多与原始检索词偏离较远的副标题分词，导致在基于向量相似度的检索中无法以较高优先级进行召回。恰巧相反，与星球大战题材和标题较为接近，但实际上内容没有直接相关的银河护卫队由于“Guardian”与“War”、“Star”与“Galaxy”更为接近，却能够以很高的优先级进行召回。此外，《The Mandalorian》作为星球大战的外传，备受星球大战粉丝追捧，但是由于标题分词与原始分词几乎没有任何关联也不包含真实语义，也很难通过向量化相似度进行召回。关于《The Mandalorian》的例子，将通过基于交互行为的推荐系统进行修正并在后续融合框架中提到具体解决办法。本节将基于直接正则匹配以及阈值过滤方法修正基于向量相似度进行召回的语义偏离的召回偏差问题。
+ 
+\begin{figure}[t]
+    \centering
+    \begin{minipage}[t]{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/StarWar1.png}
+        \caption{Star Wars: Episode I - The Phantom Menace}
+        \label{fig:starwar1}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/GardiansGalaxy.png}
+        \caption{Guardians of the Galaxy}
+        \label{fig:gardiansgalaxy}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/StarWar2.png}
+        \caption{Star Wars: Episode VII - The Force Awakens}
+        \label{fig:starwar2}
+    \end{minipage}
+    \hfill
+    \begin{minipage}[t]{0.24\linewidth}
+        \centering
+        \includegraphics[width=\linewidth]{Mandalorian.png}
+        \caption{The Mandalorian}
+        \label{fig:mandalorian}
+    \end{minipage}
+\end{figure}
+下面给出基于正则匹配及阈值过滤对召回的修正的建模：
+假设我们有一系列检索词 \( Q_1, Q_2, \ldots, Q_n \)，每个检索词在数据库中查找相似物品，并获得其召回结果 \( R_{Q_i} = \{R_{Q_i1}, R_{Q_i2}, \ldots, R_{Q_im} \} \)。参数定义如下：检索词 \( Q_i \) 是第 \( i \) 个检索词，向量表示为 \( \bm{v}_{Q_i} \)；数据库中的第 \( j \) 个物品为 \( \text{item}_j \)，向量表示为 \( \bm{v}_j \)；检索词 \( Q_i \) 和物品 \( j \) 之间的相似度表示为 \( \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) \)，相似度阈值为 \(\theta\)。按相似度排序后的检索词 \( Q_i \) 的召回结果为 \( \text{Sorted}_{R_{Q_i}} \)，正则匹配结果为 \( \text{Match} \)，最终的物品召回结果为 \( \text{Final}_{R_{Q_i}} \)。则算法可以用如下步骤概括：\\
+1. \textbf{物品向量化}：
+
+   向量化检索词和数据库中的物品，具体而言对每个检索词 \( Q_i \) 和数据库中的物品 \( \text{item}_j \) 进行向量化表示：
+   
+   \begin{equation}
+   \bm{v}_{Q_i} = \text{Vectorize}(Q_i)
+   \end{equation}
+   \begin{equation}
+   \bm{v}_j = \text{Vectorize}(\text{item}_j) \quad \forall j \in \text{Database}
+   \end{equation}
+\\
+2. \textbf{相似度计算及阈值过滤}：
+
+   对于每个检索词 \( Q_i \)，计算其与数据库中物品 \( \text{item}_j \) 的相似度，并过滤掉相似度小于阈值 \(\theta\) 的结果：
+   
+   \begin{equation}
+   \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) > \theta
+   \end{equation}
+\\
+3. \textbf{排序}：
+
+   将相似度超过阈值的检索词 \( Q_i \) 的召回结果按相似度从高到低排序：
+   
+   \begin{equation}
+   \text{Sorted}_{R_{Q_i}} = \{ R_{Q_i1}, R_{Q_i2}, \ldots \} \quad \text{where} \quad \text{sim}(\bm{v}_{Q_i}, \bm{v}_{R_{Q_ij}}) \text{ is decreasing}
+   \end{equation}
+\\
+4. \textbf{正则匹配修正}：
+
+   对于召回结果不足的部分，用正则匹配补齐，并按相似度进行排序并插入：
+   
+   \begin{equation}
+   \text{Match} = \{ M_1, M_2, \ldots \} \quad \text{where} \quad M_k \text{ matches the regular expression}
+   \end{equation}
+\\
+5. \textbf{融合插入}：
+
+基于上述阈值过滤以及正则匹配的结果进行插入重排，得到最终的找回列表：
+   
+   \begin{equation}
+   \text{Final}_{R_{Q_i}} = \begin{cases} 
+      \text{Sorted}_{R_{Q_i}} + \text{Match} & \text{if } \exists Q_i \text{ s.t. } \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) > \theta \\
+      \text{Match} & \text{otherwise}
+   \end{cases}
+   \end{equation}
+\\
+
+其中检索词 \( Q_i \) 是第 \( i \) 个检索词，向量表示为 \( \bm{v}_{Q_i} \)；数据库中的第 \( j \) 个物品为 \( \text{item}_j \)，向量表示为 \( \bm{v}_j \)；检索词 \( Q_i \) 和物品 \( j \) 之间的相似度表示为 \( \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) \)，相似度阈值为 \(\theta\)；按相似度排序后的检索词 \( Q_i \) 的召回结果为 \( \text{Sorted}_{R_{Q_i}} \)，正则匹配结果为 \( \text{Match} \)，最终的物品召回结果为 \( \text{Final}_{R_{Q_i}} \)。
+
+这个过程的伪代码描述如下：
+
+\begin{algorithm}
+\caption{基于检索词的物品召回与排序算法}
+\begin{algorithmic}[1]
+\REQUIRE 检索词集合 \( \{Q_1, Q_2, \ldots, Q_n\} \)，数据库中的物品集合，阈值 \(\theta\)
+\ENSURE 召回物品列表
+\STATE 初始化结果集合 \( \text{Final\_R} = [] \)
+\FOR{每个检索词 \( Q_i \)}
+    \STATE 将 \( Q_i \) 向量化为 \( \bm{v}_{Q_i} \)
+    \STATE 初始化临时结果集合 \( \text{Temp\_R} = [] \)
+    \FOR{数据库中的每个物品 \( j \)}
+        \STATE 将物品 \( j \) 向量化为 \( \bm{v}_j \)
+        \STATE 计算相似度 \( \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) \)
+        \IF{\( \text{sim}(\bm{v}_{Q_i}, \bm{v}_j) > \theta \)}
+            \STATE 将物品 \( j \) 加入 \( \text{Temp\_R} \)
+        \ENDIF
+    \ENDFOR
+    \IF{\( \text{Temp\_R} \neq [] \)}
+        \STATE 按照相似度从高到低排序 \( \text{Temp\_R} \)
+        \STATE 将 \( \text{Temp\_R} \) 合并入 \( \text{Final\_R} \)
+    \ENDIF
+\ENDFOR
+\IF{\( \text{Final\_R} == [] \)}
+    \STATE 使用正则表达式匹配补齐物品
+    \STATE 按照相似度从高到低排序匹配结果
+    \STATE 将匹配结果插入 \( \text{Final\_R} \)
+\ENDIF
+\RETURN \( \text{Final\_R} \)
+\end{algorithmic}
+\end{algorithm}
+
+\newpage
+\subsubsection{基于⼤语⾔模型的Query-Search推荐架构}
+预训练大语言模型可以通过分析用户的交互历史，预测用户下一次可能进行检索的若干关键词。这些关键词可以接入检索与排序步骤，从而优化推荐效果。直接使用大语言模型进行检索效率低下，而通过生成检索词进行检索可以显著提升效率。以下是该过程的详细描述：\\
+1. \textbf{用户交互历史初始化}：
+
+   用户的交互历史序列可以表示为 \( H = \{h_1, h_2, \ldots, h_k\} \)，其中每个 \( h_i \) 表示用户交互过的物品序列。
+\\
+2. \textbf{用户交互历史分析}：
+
+   使用预训练大语言模型读取并分析用户的交互历史序列 \( H \)，生成用户可能在未来会观看的电影名称中的关键词或短语。：
+
+   \begin{equation}
+   Q = \text{PTM}(H)
+   \end{equation}
+
+   其中，\( Q = \{q_1, q_2, \ldots, q_n\} \) 表示预测的检索关键词集合。
+\\
+3. \textbf{将得到的检索词用于算法3.6}：
+
+   使用推荐系统根据预测的关键词查找与之相似的物品，并返回推荐结果。具体地，利用推荐系统查找与每个预测关键词 \( q_i \) 相似的物品：
+
+   \begin{equation}
+   R_{q_i} = \text{FindSimilarItems}(q_i, \theta, \text{top\_n})
+   \end{equation}
+
+   其中，\( R_{q_i} \) 表示与预测关键词 \( q_i \) 相似的物品集合，\(\theta\) 为相似度阈值，\text{top\_n} 为返回的推荐数量。
+\\
+上述过程也可以用伪代码进行描述：
+
+\begin{algorithm}
+\caption{基于预训练大语言模型的Query-Search推荐架构}
+\begin{algorithmic}[1]
+\REQUIRE 用户交互历史序列 \( H = \{h_1, h_2, \ldots, h_k\} \)，数据库中的物品集合，阈值 \(\theta\)
+\ENSURE 召回物品列表
+\STATE 初始化结果集合 \( \text{Final\_R} = [] \)
+\STATE 使用预训练大语言模型分析用户交互历史 \( H \)，生成可能的检索词 \( Q = \{q_1, q_2, \ldots, q_n\} \)
+\FOR{每个预测的检索词 \( q \) 在 \( Q \)}
+    \STATE 根据预测的检索词 \( q \) 调用基于正则匹配及阈值过滤的修正召回
+\ENDFOR
+\RETURN \( \text{Final\_R} \)
+\end{algorithmic}
+\end{algorithm}
+
+通过上述步骤，预训练大语言模型能够基于用户的交互历史，生成未来可能使用的检索关键词，并通过这些关键词进行检索过滤以及相似度匹配，从而实现利用大语言模型技术通过基于阈值的正则匹配修正实现基于内容相似度的推荐。
+
+\newpage
+
+\subsection{基于大语言模型的混合意图识别推荐系统框架}
+\subsubsection{内容与交互混合推荐系统的对⻬召回}
+本节将介绍一种基于3.2.3中基于用户行为的优化推荐系统模型对3.2.4中基于内容相似度的模型找回结果缺乏行为数据的推荐修正方法。
+
+用户的交互历史序列可以表示为 \( H = \{h_1, h_2, \ldots, h_k\} \)，其中每个 \( h_i \) 表示用户交互过的物品序列。基于上节提到
+使用预训练大语言模型读取并分析用户的交互历史序列 \( H \)，预测检索词序列\( Q = \{q_1, q_2, \ldots, q_n\} \) 并得到初步召回结果\(
+R_{q_i} = \text{FindSimilarItems}(q_i, \theta, \text{top\_n})
+\)，以下算法将介绍基于粗召回结果基于交互行为进行对齐修正的步骤：\\
+\textbf{基于行为推荐系统的修正召回} \ 对每个初步召回的物品 \( r \in R_{q_i} \)，使用基于权重层控制注意力范围的推荐系统方法（算法 3.3）生成的模型 \(\hat{\mathcal{R}}_n\) 进行进一步召回，并将其结果进行融合。假设初步召回的物品集合为 \( R = \bigcup_{i=1}^n R_{q_i} \)，对于每个 \( r \in R \)，得到进一步召回的物品集合 \( V_r \)：
+\[
+V_{r} = \hat{\mathcal{R}}_n(r)
+\]
+
+这里的 \(\hat{\mathcal{R}}_n(r)\) 表示使用算法 3.3 生成的模型对物品 \( r \) 进行进一步召回操作。\\
+\textbf{1.召回结果对齐} \ 设初步召回的物品集合为 \( R = \bigcup_{i=1}^n R_{q_i} \)，对于每个 \( r \in R \)，得到进一步召回的物品集合 \( V_r \)。将所有 \( V_r \) 融合成最终的召回物品列表，并对其进行重排：\\
+\textbf{2.融合召回结果}：将所有进一步召回的物品集合 \( V_r \) 融合成集合 \( F \)：
+    \[
+    F = \bigcup_{r \in R} V_r
+    \]\\
+\textbf{3.计算综合评分}：对于 \( F \) 中的每个物品 \( v \)，计算其综合评分。假设评分函数为 \( S(v) \)：
+    \[
+    S(v) = \sum_{r \in R} w_r \cdot \text{score}(v, r)
+    \]
+    其中：\( w_r \) 是物品 \( r \) 的权重，
+       \(\text{score}(v, r)\) 是物品 \( v \) 与 \( r \) 的相似度评分。\\
+\textbf{4.排序}：按照综合评分 \( S(v) \) 对 \( F \) 进行排序，得到最终的推荐列表。
+
+
+基于上述流程就可以对基于内容的推荐系统召回结果做到基于行为数据的召回对齐即修正，最终的推荐结果会在一定程度上兼顾物品内容以及历史交互数据。完整的算法流程可以用如下伪代码进行描述：
+
+\begin{algorithm}
+\caption{基于预训练大语言模型的Query-Search推荐架构}
+\begin{algorithmic}[1]
+\REQUIRE 用户交互历史序列 \( H = \{h_1, h_2, ..., h_k\} \)，数据库中的物品集合，阈值 \( \theta \)
+\ENSURE 召回物品列表
+\STATE 初始化结果集合 Final\_R = []
+\STATE 使用预训练大语言模型分析用户交互历史 \( H \)，生成可能的检索词 \( Q = \{q_1, q_2, ..., q_n\} \)
+\FOR{每个预测检索词 \( q \) 在 \( Q \) 中}
+    \STATE \( R_q = \text{FindSimilarItems}(q, \theta, \text{top\_n}) \)
+    \STATE 初始化中间结果集合 Intermediate\_R = []
+    \FOR{每个物品 \( r \) 在 \( R_q \) 中}
+        \STATE \( V_r = \hat{\mathcal{R}}_n(r) \)
+        \STATE 将 \( V_r \) 中的物品加入 Intermediate\_R
+    \ENDFOR
+    \STATE 将 Intermediate\_R 融合至 Final\_R
+\ENDFOR
+\STATE 初始化最终结果集合 Final\_F = []
+\FOR{每个物品 \( r \) 在 Final\_R 中}
+    \FOR{物品 \( v \) 在 \( V_r \) 中}
+        \STATE 计算综合评分 \( S(v) = \sum_{r \in R} w_r \cdot \text{score}(v, r) \)
+        \STATE 将 \( v \) 插入 Final\_F
+    \ENDFOR
+\ENDFOR
+\STATE 对 Final\_F 按照综合评分 \( S(v) \) 进行排序
+\RETURN 排序后的 Final\_F
+\end{algorithmic}
+\end{algorithm}
+
+
+
+
+
+\subsubsection{⼤语⾔模型驱动的⾃适应混合推荐系统}
+基于先前系统组件的设计，本节将详细介绍最终的设计组合。
+
+首先基于3.2.3中基于自适应矩阵分解网络，可以得到一系列注意力范围不同的子模型，利用这些模型可以得到
+物品在不同时间尺度量化下的向量化模型。随后大语言模型基于语义理解或基于少量样本学习大致推断出用户的短期兴趣是否相对于长期兴趣产生了剧烈的变化，或者更进一步在显著情形下推断产生兴趣变化的高注意力范围比例，从而选用更加合适的子模型进行基于行为的推荐结果召回。
+
+其次基于3.2.4中基于正则匹配及阈值过滤的内容推荐模型会首先基于用户交互历史的文本信息预测用户接下来可能使用的检索词，随后使用预测结果在检索系统中基于相似度进行粗召回。
+
+在得到行为修正模型和基于内容的召回结果后，使用上节所提到的融合框架用行为模型对基于内容的召回结果进行修正从而使得最终结果能够同时兼顾召回物品的内容特征以及用户交互特征，对最后的召回组之间进行排序插入后返回最终的推荐召回结果并进行性能评估。
+
+完整的大语言模型驱动的自适应混合推荐系统框架如下如所展示：
+\begin{figure}[h!]
+    \noindent
+    \hspace*{-0in} % 调整图像位置以紧贴页面左边缘
+    \includegraphics[scale=0.45]{figures/new1.pdf} % 调整scale参数以适应页面
+    \caption{大语言模型驱动的自适应混合推荐系统框架}
+    \label{fig:enter-label}
+\end{figure}
+
+
+\section{小结}
+本节提出了基于大语言模型的基于交互行为的长短期自适应推荐网络、基于正则匹配阈值修正的基于内容推荐网络，以及使用Query-Search及行为内容对齐修正的推荐系统框架并给出了各部分的数学建模、算法设计以及最终整体架构的设计框架。本节作为本工作的核心也是后续实验的直接理论基础。

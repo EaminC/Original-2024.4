@@ -1,0 +1,169 @@
+% !TeX root = ../thuthesis-example.tex
+
+\chapter{相关工作}
+
+\section{基于用户交互的推荐系统算法}
+
+基于第一章所提到的推荐系统技术概论，本章将基于大语言模型技术特点选取基于交互行为以及基于内容的合适的推荐系统算法简要介绍重要的相关工作以及其实现原理。主要介绍基于交互行为进行推荐的问题建模以及较基础且常用的基于矩阵分解进行推荐模型训练的算法。而后对于常见的内容向量化方法以及基于相似度的检索技术进行介绍。
+
+\subsection{基于用户交互的推荐系统建模}
+
+对于基于用户交互的推荐系统而言，最核心的要素是对于大量用户交互行为的统计特性进行提取，而对于用户本身以及物品本身的关注则较少。现代推荐系统中基于矩阵分解进行用户交互特征提取基于一系列基本的假设以及现状：1)推荐系统中存在大量的交互数据。这些交互数据数量极其庞大，为后续基于交互的推荐系统算法设计提供了数据基础。同时交互种类是多样的，最常见的有对物品进行评分，本工作中业主要采取评分作为特征。此外还有点击以及购买等不同的交互种类，不同的交互种类也可以用强度进行区分，例如点击交互视为程度最低的交互，而购买视为程度最高的交互并给出评分量化表等。2)实际的交互矩阵由用户及物品的序列组成，因此维度等于用户数量与物品数量之积，而在现代推荐系统中，物品数量与用户数量本身就十分庞大且日益更新，直接导致最终的交互矩阵的维度十分庞大并且会以极快的速度更新。在这一前提下，将原先高纬度的交互矩阵进行矩阵分解，在保留原先物品以及用户数量的前提下，能够按照所需精度保留各自向量维度，从而大大降低用户向量及物品向量的总体维度，使得计算以及更新的开销得到降低。3)在实际的推荐系统之中，用户实际只会各自与极小一部分的物品产生过交互行为，而大多数物品也只有小部分用户的交互记录。同时推荐系统中有着极为明显的长尾效应\cite{Anderson2006,Brynjolfsson2006}，也就是头部的少部分物品占据了整体交互数据的绝大部分，而大多数普通物品整体的交互总和仅仅占了小部分。因此交互矩阵虽然维度巨大，但实际十分稀疏\cite{steck2019embarrassingly}，绝大多数矩阵元素都是未有交互。因此在原先矩阵上直接进行特征提取运算效率十分低下，而转换为物品和用户的低维向量后数据存储与运算效率都得到了提升。4)基于行为的推荐系统假设用户基于自身喜好进行交互行为，这种隐藏的喜好特征在一定程度上能够在时间序列中维持稳定特性，反映在交互序列中便是依据过往交互行为可以通过特征提取得到这一种隐藏喜好，同时基于其稳定性能够用于预测未来交互。
+
+基于上述假设前提，对于基于用户交互的推荐系统可以抽象成如下问题描述：给定一个用户集合 \( \mathcal{U} = \{u_1, u_2, \ldots, u_m\} \) 和一个项目集合 \( \mathcal{I} = \{i_1, i_2, \ldots, i_n\} \)。交互状态空间可以表示为一个矩阵 \( \mathbf{R} \in \mathbb{R}^{m \times n} \)，其中 \( \mathbf{R}_{ui} \) 表示用户 \( u \) 对项目 \( i \) 的评分。如果用户 \( u \) 没有对项目 \( i \) 评分，则 \( \mathbf{R}_{ui} \) 为缺失值。推荐系统目标为根据用户在前一部分项目上的评分数据 \( \{I_1, I_2, \ldots, I_k\} \)，预测用户在后一部分项目上的评分 \( \{I_{k+1}, \ldots, I_n\} \)。即，利用前 \( k \) 个项目的评分记录来预测剩余项目的评分，从而为用户推荐他们可能感兴趣的项目。为了评估推荐系统的效果，我们可以将预测值 \( \{I_{k+1}', \ldots, I_n'\} \) 与真实值 \( \{I_{k+1}, \ldots, I_n\} \) 进行比较。相似程度越高的代表推荐系统效果越好。
+
+当然这一评价方式虽然是惯用的，但也确实存在局限性。由于推荐系统介入改变了交互序列，因此无法排除曝光行为本身的因果效应与实际交互的耦合，碍于实时数据集收集困难，这一点有望在真实推荐系统环境及数据集中得到进一步改善。
+
+
+
+\subsection{基于矩阵分解的机器学习方法}
+基于用户交互行为的模型推荐算法中最常用的是基于矩阵奇异值分解的方法。首先，我们将评分矩阵 \( R \) 分解为三个矩阵：用户特征矩阵 \( U \)、奇异值矩阵 \( \Sigma \)、项目特征矩阵 \( V \)。公式表示如下：
+\begin{equation}
+R \approx U \Sigma V^T\label{eq:appendix-equation}
+\end{equation}
+
+实际推荐系统中由于维度过大，为了降维，取前 \( k \) 个奇异值及向量，得到截断交互矩阵，记为\( \hat{R} \),实际的推荐行为基于该矩阵：
+\begin{equation}
+R \approx U_k \Sigma_k V_k^T \triangleq \hat{R}\label{eq:appendix-equation}
+\end{equation}
+
+
+为了提高预测的准确性，通常需要最小化以下损失函数：
+\begin{equation}
+\mathcal{L} = \sum_{(u, i) \in \mathcal{K}} (R_{ui} - (U_k \Sigma_k V_k^T)_{ui})^2 + \lambda (\|U_k\|^2 + \|V_k\|^2)\label{eq:appendix-equation}
+\end{equation}
+其中，\( \mathcal{K} \) 是所有已知评分的集合，\( \lambda \) 是正则化参数， \( \|\cdot\|^2 \) 代表Frobenius 范数，用于正则化，防止过拟合。
+
+在学习过程中，首先随机初始化矩阵 \( U_k \) 和 \( V_k \)。然后，基于梯度下降\cite{cauchy1847}优化损失函数 \( \mathcal{L} \)。
+
+计算梯度并更新参数，\( \eta \) 是学习率：
+
+\begin{equation}
+U_k' = U_k - \eta \frac{\partial \mathcal{L}}{\partial U_k}=U_k -2 \sum_{(u, i) \in \mathcal{K}} (R_{ui} - (U_k \Sigma_k V_k^T)_{ui}) V_k \Sigma_k + 2 \lambda U_k\label{eq:appendix-equation}
+\end{equation}
+
+\begin{equation}
+V_k' = V_k - \eta \frac{\partial \mathcal{L}}{\partial V_k}=V_k -2 \sum_{(u, i) \in \mathcal{K}} (R_{ui} - (U_k \Sigma_k V_k^T)_{ui}) \Sigma_k^T U_k^T + 2 \lambda V_k\label{eq:appendix-equation}
+\end{equation}
+
+将原始数据集 \(\mathcal{K}\)分割成训练集 \(\mathcal{K}_{\text{train}}\)、验证集  \(\mathcal{K}_{\text{val}}\) 和测试集 \(\mathcal{K}_{\text{test}}\)：
+
+\begin{equation}
+\mathcal{K} = \mathcal{K}_{\text{train}} \cup \mathcal{K}_{\text{val}} \cup \mathcal{K}_{\text{test}}\label{eq:appendix-equation}
+\end{equation}
+
+定义训练集误差、验证集误差及测试集误差\cite{robbins1951}：
+
+\begin{equation}
+\text{MSE}_{\text{train}} = \frac{1}{|\mathcal{K}|} \sum_{(u, i) \in \mathcal{K}} (R_{ui} - \hat{R}_{ui})^2\label{eq:appendix-equation}
+\end{equation}
+
+\begin{equation}
+\text{MSE}_{\text{val}} = \frac{1}{|\mathcal{K}_{\text{val}}|} \sum_{(u, i) \in \mathcal{K}_{\text{val}}} (R_{ui} - \hat{R}_{ui})^2\label{eq:appendix-equation}
+\end{equation}
+
+\begin{equation}
+\text{MSE}_{\text{test}} = \frac{1}{|\mathcal{K}_{\text{test}}|} \sum_{(u, i) \in \mathcal{K}_{\text{test}}} (R_{ui} - \hat{R}_{ui})^2\label{eq:appendix-equation}
+\end{equation}
+
+整个流程的伪代码如下：
+
+\begin{algorithm}
+\caption{基于SVD的推荐系统算法}
+\begin{algorithmic}[1]
+\REQUIRE 用户集合 \( U \)，项目集合 \( I \)，评分矩阵 \( R \)，奇异值个数 \( k \)，学习率 \( \eta \)，正则化参数 \( \lambda \)，迭代次数 \( \text{num\_epochs} \)
+\ENSURE 预测评分矩阵 \( \hat{R} \)
+\STATE 随机初始化 \( U_k \in \mathbb{R}^{m \times k} \) 和 \( V_k \in \mathbb{R}^{n \times k} \)
+\FOR{epoch = 1 to \text{num\_epochs}}
+    \FOR{each \( (u, i) \in R \)}
+        \STATE 计算误差 \( e_{ui} = R_{ui} - (U_k \Sigma_k V_k^T)_{ui} \)
+        \STATE 更新 \( U_k \) 和 \( V_k \)
+        \STATE \( U_k[u, :] = U_k[u, :] + \eta \left( e_{ui} V_k[i, :] - \lambda U_k[u, :] \right) \)
+        \STATE \( V_k[i, :] = V_k[i, :] + \eta \left( e_{ui} U_k[u, :] - \lambda V_k[i, :] \right) \)
+    \ENDFOR
+\ENDFOR
+\STATE 计算预测评分矩阵 \( \hat{R} = U_k \Sigma_k V_k^T \)
+\RETURN \( \hat{R} \)
+\end{algorithmic}
+\end{algorithm}
+
+
+\section{基于内容的推荐系统算法}
+
+与基于交互行为的推荐系统相对应，基于内容的推荐系统算法并不会将交互记录等视为行为信号并以统计学的视角对损失函数进行优化，而是从语义分析的角度给予用户及物品向量化，因此一个合理的特征提取策略以及高质量的向量化嵌入是极为重要的。高质量的向量化直接决定了推荐系统的推荐效果。本节将介绍后续实验中用于优化的三种向量化方法。
+
+\subsection{基于内容的向量化方法}
+符号同前，本节介绍三种向量化方法在基于内容的推荐系统中的具体应用。
+
+\subsubsection{TF-IDF}
+TF-IDF（Term Frequency-Inverse Document Frequency）\cite{jones1972statistical}在自然语言处理领域常用于计算单个token对于文档的重要程度，而在推荐系统中可以用来衡量单个项目项目在用户交互历史中的重要程度。TF-IDF 包括两个组成：词频 (TF) 和逆文档频率 (IDF)。在推荐系统中可以引申为项目频率和逆用户频率。\\
+\textbf{项目频率 (TF)} 表示项目 \( i \) 在用户 \( u \) 中出现的次数。具体为：
+\begin{equation}
+\text{TF}(i, u) = \frac{f_{i,u}}{\sum_{i' \in u} f_{i',u}}
+\label{eq:tf}
+\end{equation}
+其中\( f_{i,u} \) 是项目 \( i \) 在用户 \( u \) 中出现的次数，分母代表用户 \( u \) 项目总数。\\
+\textbf{逆用户频率 (IDF)}  表示项目 \( i \) 的普遍重要性。具体为：
+\begin{equation}
+\text{IDF}(i, \mathcal{U}) = \log \left( \frac{|\mathcal{U}|}{|\{u \in \mathcal{U} : i \in u\}|} \right)
+\label{eq:idf}
+\end{equation}
+其中，\( |\mathcal{U}| \) 是用户集 \( \mathcal{U} \) 中用户的总数，分母是包含项目 \( i \) 的用户数。\\
+\textbf{TF-IDF}结合项目频率及逆用户频率，具体为：
+\begin{equation}
+\text{TF-IDF}(i, u, \mathcal{U}) = \text{TF}(i, u) \times \text{IDF}(i, \mathcal{U})
+\label{eq:tfidf}
+\end{equation}
+
+TF-IDF 值越高，项目在用户交互记录中的重要性越大。将每个项目的特征表示为一个向量。对于每个项目 \( i \)，我们计算所有用户 \( \mathcal{U} \) 中该项目的 TF-IDF 值，形成一个向量 \( \bm{v}_i \)，其第 \( j \) 个分量为：
+\begin{equation}
+\bm{v}_i[j] = \text{TF-IDF}(i, u_j, \mathcal{U})\label{eq:tfidf}
+\end{equation}
+其中，\( u_j \) 表示第 \( j \) 个用户。每个项目 \( i \) 都可以表示为一个 TF-IDF 向量 \( \bm{v}_i \)，在后续用于计算相似度，从而生成推荐结果。
+
+\subsubsection{BERT}
+
+BERT（Bidirectional Encoder Representations from Transformers）\cite{devlin2019bert}在自然语言处理领域用于文本上下文表示，而在基于内容的推荐系统中也可以用于物品的语义表示。Bert是一个大模型，通常从零开始训练是比较大的，一般应用会包含预训练及微调，本工作中主要使用预训练的Bert来验证框架正确性。使用Bert进行物品语义向量化通常包含以下步骤：\\
+\textbf{预处理} \  将项目 \( i \) 的档案信息 \( \text{Doc}_i \) 进行分词和标准化处理。\\
+\textbf{向量化} \ 将档案信息作为预训练BERT输入，从而得到上下文特征表示 \( \bm{v}_i \)。
+\begin{equation}
+\bm{v}_i = \text{BERT}(\text{Doc}_i)
+\label{eq:bert}
+\end{equation}
+\textbf{用户特征建模} \ 对于每个用户 \( u \)，基于其历史交互项目的特征向量来建模其偏好。假设用户 \( u \) 交互过的项目集合为 \( \mathcal{I}_u \)，则用户的偏好向量 \( \bm{p}_u \) 可以表示为这些项目特征向量的加权平均：
+\begin{equation}
+\bm{p}_u = \frac{1}{|\mathcal{I}_u|} \sum_{i \in \mathcal{I}_u} \bm{v}_i
+\label{eq:user-preference}
+\end{equation}
+
+得到用户向量 \( \bm{p}_u \) 与候选项目特征向量 \( \bm{v}_i \) 后通过相似度计算得到推荐结果。\\
+
+\subsubsection{SpaCy}
+SpaCy 是一个自然语言处理开源库，同样提供了语义理解及向量化的工具。以下将简单介绍其原理及如何运用于推荐系统：\\
+\textbf{预处理} \ 通过预定义词典对档案信息进行分词。\\
+\textbf{词性标注} \  通过统计数据以及预训练模型为每个分词标注词性。\\
+\textbf{依存句法分析} \ 构建依存树以识别句子中词汇之间的依存关系并建立句子结构\\
+\textbf{命名实体识别（NER）} 通过预训练模型和规则识别文本中具有特定意义的实体。\\
+\textbf{词嵌入} \ 通过预训练模型诸如 GloVe（Global Vectors for Word Representation）\cite{pennington2014glove} 和 fastText\cite{bojanowski2017enriching}将分词 \( w \) 映射为固定长度向量 \( \bm{e}_w \)。
+
+与Bert类似，通过输入档案信息得到用户向量 \( \bm{p}_u \) 与候选项目特征向量 \( \bm{v}_i \) 用于后续相似度计算以及推荐。
+
+\subsection{基于相似度排序的推荐检索}
+基于上节得到了用户及物品的特征向量表示，就可以计算相似度并进行推荐，这一过程的伪代码如下：
+\begin{algorithm}
+\caption{基于相似度排序的推荐系统算法}
+\begin{algorithmic}[1]
+\REQUIRE 用户偏好向量 \( \bm{p}_u \)，项目特征向量集合 \( \{\bm{v}_i\} \)，推荐数量 \( N \)
+\ENSURE 推荐项目列表
+\FOR{每个候选项目 \( i \)}
+    \STATE 计算相似度 \( \text{sim}(u, i) = \bm{p}_u \cdot \bm{v}_i \)
+\ENDFOR
+\STATE 按相似度从高到低排序候选项目
+\STATE 返回前 \( N \) 个项目作为推荐结果
+\end{algorithmic}
+\end{algorithm}
+
+\section{小结}
+本章介绍了基于用户交互行为以及基于内容的推荐系统的基本思想以及几个常用的实现。本章介绍内容也作为第三章本工作设计的基于大语言模型的混合推荐系统框架及实现的基础。后续将介绍如何通过大语言模型对基础实现进行优化并最终将基于用户交互行为的推荐系统以及基于内容的推荐系统进行对齐融合的一种实现。
+
+

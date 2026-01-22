@@ -1,0 +1,25 @@
+% !TeX root = ../thuthesis-example.tex
+
+% 中英文摘要和关键字
+
+\begin{abstract}
+  推荐系统技术根据用户过往交互行为提取喜好特征为其推荐物品，被广泛应用于用户生产内容平台、互联网购物平台及城市生活综合平台等多种场景，以期更精准高效地为用户提供推荐结果，从而提升用户体验、减小用户交互负担并综合提升社会经济效益。在现有的技术中，推荐系统技术主要有内容推荐、行为推荐以及混合推荐几种最主要的技术路径，并且以协同过滤为代表的行为推荐技术由于庞大的用户物品交互数据更为成熟。但是这种推荐技术更加关注行为而不是用户和物品本身的特征，缺乏对主体的理解。
+  
+  随着自然语言处理技术的提升、文本向量化技术的成熟以及大语言模型技术的发展，基于语义理解内容本身的推荐系统技术也开始日益涌现。为了更好提升推荐系统推荐质量以及内容语义理解对推荐系统理解能力的提升，本工作提出了一种基于大语言模型技术的推荐系统框架，该框架能够实现物品内容的语义理解，并融合用户交互行为的长短期兴趣数据进行推荐：第一，为了能够实现用户长短期兴趣推荐，本工作提出了一种协同过滤模型的对注意力范围的量化优化方法，并基于大语言模型设计智能体用于识别用户偏好变化并调用相应模型从而实现长短期兴趣的自适应推荐。第二，为了让推荐系统对内容具备理解能力，利用自然语言处理技术对内容进行向量化，并利用大语言模型对内容进行理解，生成相似检索词，从而增强现有检索系统在内容相似物品上的检索能力。第三，对上述两种经过大语言模型优化的内容推荐召回的物品进行修正对齐，让最终的推荐系统能够混合识别用户行为及内容，并提出一套大语言模型与推荐系统融合的规范范式。最后本工作进行了上述混合推荐系统的工程实现，在Movielens数据集上实现行为推荐最多26.63\%的召回率提升并在最终的混合架构中实现了归一化折扣累计增益最多148.02\%的推荐质量提升。
+
+  % 关键词用“英文逗号”分隔，输出时会自动处理为正确的分隔符
+  \thusetup{
+    keywords = {推荐系统, 大语言模型, 机器学习, 语义理解, 自然语言处理},
+  }
+\end{abstract}
+
+\begin{abstract*}
+
+A recommender system extracts user preferences from past interactions to suggest items, widely used in platforms like user-generated content, online shopping, and urban services. These systems aim to provide accurate recommendations, reduce user interaction burden, and enhance user experience while improving socio-economic benefits. Current technologies include content-based, behavior-based, and hybrid recommendations. Behavior-based technologies, like collaborative filtering, are mature due to extensive user-item interaction data but focus on behavior over intrinsic features, lacking comprehensive understanding.
+
+Advancements in natural language processing (NLP), text vectorization, and large language models (LLMs) have made content-based recommendations based on semantic understanding more prominent. This study proposes a recommender system framework based on large language model technology, which enables semantic understanding of item content and integrates both short-term and long-term user interaction behaviors for recommendation. Firstly, it optimizes collaborative filtering models to recommend both long-term and short-term interests. LLM-based agents identify changes in user preferences for adaptive recommendations. Secondly, it vectorizes content using NLP and LLMs to generate similar retrieval terms, enhancing existing retrieval systems. Thirdly, it aligns LLM-optimized content recommendations with user behavior, integrating both aspects. A standardized paradigm for LLM integration with recommender systems is also proposed. This hybrid system achieved a recall rate improvement of up to 26.63\% in behavior recommendation and an NDCG improvement of up to 148.02\% in the final framework on the Movielens dataset.
+
+\thusetup{
+    keywords* = {recommendation system, large language model, machine learning, semantic understanding, natural language processing},
+  }
+\end{abstract*}
